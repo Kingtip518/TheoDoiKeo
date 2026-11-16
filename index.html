@@ -33,6 +33,12 @@
   .dong-tien.bo b { color:var(--mo); }
   .dong-tien span { color:var(--mo); font-size:13px; }
   .ct { color:var(--mo); font-size:12.5px; margin:6px 0; }
+  .tk { display:flex; gap:6px; margin-bottom:10px; }
+  .tk div { flex:1; background:var(--the); border:1px solid var(--vien); border-radius:10px; padding:8px; text-align:center; font-size:12px; color:var(--mo); }
+  .tk div b { display:block; font-size:18px; color:var(--chu); }
+  .kq { background:var(--the); border:1px solid var(--vien); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:13.5px; }
+  .kq .tyso { font-weight:700; font-size:15px; }
+  .dung { color:var(--xanh); font-weight:600; } .sai { color:var(--do); font-weight:600; }
   .nhan { display:inline-block; background:#3a1f1f; color:#ffab91; border-radius:6px; padding:1px 7px; font-size:12px; margin:6px 6px 0 0; }
   .trong { color:var(--mo); text-align:center; padding:18px; }
   svg { display:block; }
@@ -54,6 +60,11 @@
   <p class="giaithich">Biến động phút chót, thường do tin đội hình, chấn thương.</p>
   <div id="top5Nhanh"></div>
 
+  <h2>🏁 Kết quả đối chiếu</h2>
+  <p class="giaithich">Hết trận so tỷ số với cửa được đổ tiền. Thống kê chỉ tính trận đủ tiêu chuẩn (từ 60% nhà cái cùng giảm).</p>
+  <div id="thongKe"></div>
+  <div id="ketQua"></div>
+
   <h2>📋 Tất cả trận đang theo dõi</h2>
   <div id="tatCa"></div>
 </main>
@@ -61,7 +72,7 @@
 <script type="module">
 import { phanTichTran, moTaHinhDang, moTaPinnacle } from './phan-tich.js';
 const NHAN_CUA = ['1 (nhà)', 'X (hòa)', '2 (khách)'];
-let duLieu = null, trangThai = null;
+let duLieu = null, trangThai = null, ketQua = null;
 
 const gioVN = ms => new Date(ms).toLocaleString('vi-VN', { timeZone:'Asia/Ho_Chi_Minh', hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit' });
 const cachDay = ms => { const p = Math.round((Date.now() - ms) / 60000); return p < 60 ? `${p} phút trước` : `${Math.floor(p/60)} giờ ${p%60} phút trước`; };
@@ -106,7 +117,7 @@ function veThe(t, p) {
 function hienThi() {
   if (!duLieu) return;
   const giai = document.getElementById('chonGiai').value;
-  const ds = Object.values(duLieu.tran).filter(t => (!giai || t.giai === giai) && t.gioDa > Date.now() - 3*3600e3);
+  const ds = Object.values(duLieu.tran).filter(t => (!giai || t.giai === giai) && t.gioDa > Date.now());
 
   const top5 = ds.map(t => ({ t, p: phanTichTran(t) })).filter(x => x.p && x.p.duTieuChuanTop).sort((a, b) => b.p.giam - a.p.giam).slice(0, 5);
   document.getElementById('top5').innerHTML = top5.length ? top5.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có trận nào đủ điều kiện.</div>';
@@ -115,17 +126,29 @@ function hienThi() {
   const nhanh = ds.map(t => ({ t, p: phanTichTran(t, tu3h) })).filter(x => x.p && x.p.duTieuChuanTop).sort((a, b) => b.p.giam - a.p.giam).slice(0, 5);
   document.getElementById('top5Nhanh').innerHTML = nhanh.length ? nhanh.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có biến động trong 3 giờ qua.</div>';
 
+  // Kết quả đối chiếu
+  const tk = (ketQua && ketQua.thongKe) || {};
+  const o = (ten, x) => `<div>${ten}<b>${x && x.tong ? Math.round(x.dung / x.tong * 100) + '%' : '—'}</b>${x && x.tong ? `đúng ${x.dung}/${x.tong}` : 'chưa có'}</div>`;
+  document.getElementById('thongKe').innerHTML = `<div class="tk">${o('Giảm từ 20%', tk.tu20)}${o('Giảm 10–20%', tk.tu10)}${o('Giảm 3–10%', tk.tu3)}</div>`;
+  const dsKq = ((ketQua && ketQua.tran) || []).filter(k => (!giai || k.giai === giai) && k.duTieuChuan && k.giam >= 3).slice(0, 30);
+  document.getElementById('ketQua').innerHTML = dsKq.length ? dsKq.map(k => `<div class="kq">
+      <div class="dong1"><span>${k.giai}</span><span>${gioVN(k.gioDa)}</span></div>
+      <div class="tyso">${k.nha} ${k.tySo} ${k.khach}</div>
+      💰 Tiền đổ vào: <b>${k.doiDuocDoTien}</b> (−${k.giam}%) → <span class="${k.dungHuong ? 'dung' : 'sai'}">${k.dungHuong ? '✅ Đúng hướng' : '❌ Sai hướng'}</span>
+    </div>`).join('') : '<div class="trong">Chưa có trận kèo chạy nào kết thúc.</div>';
+
   const tatCa = ds.sort((a, b) => a.gioDa - b.gioDa);
   document.getElementById('tatCa').innerHTML = tatCa.length ? tatCa.map(t => veThe(t, phanTichTran(t))).join('') : '<div class="trong">Hiện chưa có trận nào trong 48 giờ tới.</div>';
 }
 
 async function taiDuLieu() {
   try {
-    const [a, b] = await Promise.all([
+    const [a, b, c] = await Promise.all([
       fetch('data/lich-su.json?t=' + Date.now()).then(r => r.json()),
       fetch('data/trang-thai.json?t=' + Date.now()).then(r => r.json()).catch(() => null),
+      fetch('data/ket-qua.json?t=' + Date.now()).then(r => r.json()).catch(() => null),
     ]);
-    duLieu = a; trangThai = b;
+    duLieu = a; trangThai = b; ketQua = c;
     const chon = document.getElementById('chonGiai'), cu = chon.value;
     const cacGiai = [...new Set(Object.values(duLieu.tran).map(t => t.giai))].sort();
     chon.innerHTML = `<option value="">Tất cả giải (${cacGiai.length})</option>` + cacGiai.map(g => `<option ${g === cu ? 'selected' : ''}>${g}</option>`).join('');
