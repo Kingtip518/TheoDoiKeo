@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theo Dõi Kèo Bất Thường</title>
+<style>
+  :root { --nen:#0f1419; --the:#1a2129; --vien:#2a333d; --chu:#e7ecf1; --mo:#8b98a5; --cam:#f5a524; --do:#ef5350; --xanh:#26a69a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--nen); color:var(--chu); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { padding:16px; border-bottom:1px solid var(--vien); position:sticky; top:0; background:var(--nen); z-index:2; }
+  h1 { margin:0; font-size:19px; color:var(--cam); }
+  .tt { color:var(--mo); font-size:13px; margin-top:4px; }
+  main { padding:12px; max-width:760px; margin:auto; }
+  h2 { font-size:16px; margin:22px 4px 4px; }
+  .giaithich { color:var(--mo); font-size:13px; margin:0 4px 10px; }
+  .the { background:var(--the); border:1px solid var(--vien); border-radius:12px; padding:12px; margin-bottom:10px; }
+  .dong1 { display:flex; justify-content:space-between; color:var(--mo); font-size:12.5px; }
+  .doi { font-weight:600; font-size:16px; margin:4px 0 8px; }
+  .hang { display:flex; align-items:center; gap:10px; }
+  .so { font-size:22px; font-weight:700; color:var(--do); min-width:76px; }
+  .so.tang { color:var(--xanh); }
+  .ct { flex:1; font-size:13.5px; }
+  .ct b { color:var(--cam); }
+  .gia3 { display:flex; gap:6px; margin-top:8px; }
+  .gia3 div { flex:1; text-align:center; background:var(--nen); border-radius:8px; padding:4px; font-size:12px; color:var(--mo); }
+  .gia3 div span { display:block; color:var(--chu); font-weight:600; font-size:14px; }
+  .gia3 div.chon { outline:1px solid var(--cam); }
+  .chon-giai { width:100%; padding:10px; border-radius:10px; background:var(--the); color:var(--chu); border:1px solid var(--vien); font-size:15px; }
+  .doi { margin:4px 0 8px; flex:1; }
+  .dong-tien { font-size:14px; margin:2px 0; }
+  .dong-tien b { color:var(--cam); }
+  .dong-tien.bo b { color:var(--mo); }
+  .dong-tien span { color:var(--mo); font-size:13px; }
+  .ct { color:var(--mo); font-size:12.5px; margin:6px 0; }
+  .nhan { display:inline-block; background:#3a1f1f; color:#ffab91; border-radius:6px; padding:1px 7px; font-size:12px; margin:6px 6px 0 0; }
+  .trong { color:var(--mo); text-align:center; padding:18px; }
+  svg { display:block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Theo Dõi Kèo Bất Thường</h1>
+  <div class="tt" id="trangThai">Đang tải dữ liệu…</div>
+</header>
+<main>
+  <select class="chon-giai" id="chonGiai"><option value="">Tất cả giải</option></select>
+
+  <h2>🔥 Top 5 kèo giảm mạnh nhất từ lúc bắt đầu theo dõi</h2>
+  <p class="giaithich">So giá trung bình các nhà cái hiện tại với lần đầu lấy được. Cửa giảm giá = cửa được đổ tiền. Chỉ tính trận có từ 60% nhà cái cùng giảm, đã loại trận nghi dữ liệu đảo đội.</p>
+  <div id="top5"></div>
+
+  <h2>⚡ Top 5 kèo chạy nhanh trong 3 giờ gần nhất</h2>
+  <p class="giaithich">Biến động phút chót, thường do tin đội hình, chấn thương.</p>
+  <div id="top5Nhanh"></div>
+
+  <h2>📋 Tất cả trận đang theo dõi</h2>
+  <div id="tatCa"></div>
+</main>
+
+<script type="module">
+import { phanTichTran, moTaHinhDang, moTaPinnacle } from './phan-tich.js';
+const NHAN_CUA = ['1 (nhà)', 'X (hòa)', '2 (khách)'];
+let duLieu = null, trangThai = null;
+
+const gioVN = ms => new Date(ms).toLocaleString('vi-VN', { timeZone:'Asia/Ho_Chi_Minh', hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit' });
+const cachDay = ms => { const p = Math.round((Date.now() - ms) / 60000); return p < 60 ? `${p} phút trước` : `${Math.floor(p/60)} giờ ${p%60} phút trước`; };
+
+function veDuong(t, cua) {
+  const ds = t.moc.map(m => m.tb[cua]);
+  if (ds.length < 2) return '';
+  const w = 110, h = 34, mn = Math.min(...ds), mx = Math.max(...ds), k = mx - mn || 1;
+  const d = ds.map((v, i) => `${(i/(ds.length-1)*w).toFixed(1)},${(h-3-(v-mn)/k*(h-6)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}"><polyline points="${d}" fill="none" stroke="${ds[ds.length-1] < ds[0] ? 'var(--do)' : 'var(--xanh)'}" stroke-width="2"/></svg>`;
+}
+
+function veThe(t, p) {
+  const gia = t.moc[t.moc.length - 1].tb;
+  const nhan = [];
+  if (p) {
+    if (p.nghiDaoDoi) nhan.push('⚠️ Nghi dữ liệu đảo đội nhà – khách (không tính)');
+    else {
+    if (p.hinhDang === 'tu-tu' && p.giam >= 5) nhan.push('🚩 Giảm từ từ – tiền vào đều');
+    if (p.doiCuaDuoi && p.giam >= 5) nhan.push('🚩 Đội cửa dưới được đổ tiền');
+    if (p.satGioDa && p.giam >= 5) nhan.push('🚩 Kèo chạy sát giờ đá');
+    if (p.soSoSanh >= 3 && p.soGiam / p.soSoSanh >= 0.8 && p.giam >= 8) nhan.push('🚩 Gần như mọi nhà cái cùng giảm');
+    if (p.pinGiam !== null && p.pinGiam >= 3 && p.giam >= 5) nhan.push('🚩 Pinnacle cũng giảm');
+    }
+  }
+  const chiTiet = p && p.giam > 0
+    ? `<div class="dong-tien">💰 Được đổ tiền: <b>${p.doiDuocDoTien}</b> <span>${p.giaDau.toFixed(2)} → ${p.giaMoi.toFixed(2)}</span></div>
+       <div class="dong-tien bo">❌ Bị bỏ: <b>${p.doiBiBo}</b> <span>${p.giaBoDau.toFixed(2)} → ${p.giaBoMoi.toFixed(2)} (+${p.tangBo.toFixed(1)}%)</span></div>
+       <div class="ct">${p.soSoSanh ? `${p.soGiam}/${p.soSoSanh} nhà cái cùng giảm · ` : ''}${moTaPinnacle(p)}<br>${moTaHinhDang(p)} · từ ${cachDay(p.tuLuc)}</div>`
+    : `<div class="ct">${p ? 'Kèo chưa có biến động đáng kể' : 'Mới lấy 1 lần, chờ lần lấy sau để so sánh'}</div>`;
+  return `<div class="the">
+    <div class="dong1"><span>${t.giai}</span><span>Đá lúc ${gioVN(t.gioDa)}</span></div>
+    <div class="hang"><div class="doi">${t.nha} – ${t.khach}</div>
+      <div class="so">${p && p.giam > 0 ? '−' + p.giam.toFixed(1) + '%' : ''}</div></div>
+    ${chiTiet}
+    ${p && p.giam > 0 ? veDuong(t, p.cua) : ''}
+    ${nhan.map(n => `<span class="nhan">${n}</span>`).join('')}
+    <div class="gia3">${gia.map((g, i) => `<div class="${p && p.giam > 0 && p.cua === i ? 'chon' : ''}">${NHAN_CUA[i]}<span>${g.toFixed(2)}</span></div>`).join('')}</div>
+  </div>`;
+}
+
+function hienThi() {
+  if (!duLieu) return;
+  const giai = document.getElementById('chonGiai').value;
+  const ds = Object.values(duLieu.tran).filter(t => (!giai || t.giai === giai) && t.gioDa > Date.now() - 3*3600e3);
+
+  const top5 = ds.map(t => ({ t, p: phanTichTran(t) })).filter(x => x.p && x.p.duTieuChuanTop).sort((a, b) => b.p.giam - a.p.giam).slice(0, 5);
+  document.getElementById('top5').innerHTML = top5.length ? top5.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có trận nào đủ điều kiện.</div>';
+
+  const tu3h = Date.now() - 3.5*3600e3;
+  const nhanh = ds.map(t => ({ t, p: phanTichTran(t, tu3h) })).filter(x => x.p && x.p.duTieuChuanTop).sort((a, b) => b.p.giam - a.p.giam).slice(0, 5);
+  document.getElementById('top5Nhanh').innerHTML = nhanh.length ? nhanh.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có biến động trong 3 giờ qua.</div>';
+
+  const tatCa = ds.sort((a, b) => a.gioDa - b.gioDa);
+  document.getElementById('tatCa').innerHTML = tatCa.length ? tatCa.map(t => veThe(t, phanTichTran(t))).join('') : '<div class="trong">Hiện chưa có trận nào trong 48 giờ tới.</div>';
+}
+
+async function taiDuLieu() {
+  try {
+    const [a, b] = await Promise.all([
+      fetch('data/lich-su.json?t=' + Date.now()).then(r => r.json()),
+      fetch('data/trang-thai.json?t=' + Date.now()).then(r => r.json()).catch(() => null),
+    ]);
+    duLieu = a; trangThai = b;
+    const chon = document.getElementById('chonGiai'), cu = chon.value;
+    const cacGiai = [...new Set(Object.values(duLieu.tran).map(t => t.giai))].sort();
+    chon.innerHTML = `<option value="">Tất cả giải (${cacGiai.length})</option>` + cacGiai.map(g => `<option ${g === cu ? 'selected' : ''}>${g}</option>`).join('');
+    document.getElementById('trangThai').textContent =
+      `Cập nhật ${duLieu.capNhat ? cachDay(duLieu.capNhat) : 'chưa có'} · ${Object.keys(duLieu.tran).length} trận` +
+      (trangThai && trangThai.conLai != null ? ` · còn ${trangThai.conLai} lượt lấy kèo trong tháng` : '');
+    hienThi();
+  } catch (e) {
+    document.getElementById('trangThai').textContent = 'Chưa có dữ liệu. Hãy chạy lấy kèo lần đầu trên GitHub.';
+  }
+}
+
+document.getElementById('chonGiai').addEventListener('change', hienThi);
+taiDuLieu();
+setInterval(taiDuLieu, 5 * 60 * 1000);
+</script>
+</body>
+</html>
