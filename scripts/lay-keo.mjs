@@ -3,9 +3,9 @@
 //  Nguồn dữ liệu: The Odds API (the-odds-api.com)
 //  Việc làm mỗi lần chạy:
 //   1. Xem giải nào có trận sắp đá (bước này KHÔNG tốn lượt)
-//   2. Lấy kèo tất cả các giải đó, dùng hết lượt thì thôi
+//   2. Mỗi trận chỉ lấy kèo 3 lần: lần đầu thấy trận (làm mốc), 60 phút và 15 phút trước giờ đá
 //   3. Lưu lại kèo từng lần lấy  ->  data/lich-su.json
-//   4. Nếu có trận kèo giảm mạnh  ->  báo Telegram (nếu đã cài)
+//   4. Tại mốc 60 phút và 15 phút, kèo bất thường  ->  báo Telegram ngay
 //   5. Mỗi 3 giờ gửi bản tin Top 5 về Telegram
 //   6. Hết trận lấy tỷ số, đối chiếu với cửa được đổ tiền  ->  data/ket-qua.json + Telegram
 // =====================================================================
@@ -15,9 +15,9 @@ import { phanTichTran, moTaHinhDang, moTaPinnacle } from '../phan-tich.js';
 
 // ---------------- CÀI ĐẶT (sửa số ở đây nếu muốn) ----------------
 // Tự lấy danh sách TẤT CẢ giải bóng đá đang diễn ra từ nguồn dữ liệu (không tốn lượt)
-const UU_TIEN_TRAN_SAP_DA_TRONG_SO_GIO = 6;          // trận sắp đá trong 6 giờ tới được lấy kèo dày hơn
+const LAY_KEO_TRUOC_GIO_DA_SO_PHUT = [60, 15];       // lấy kèo và báo tại 60 phút và 15 phút trước giờ đá
+const LAY_MOC_DAU_TOI_DA_MOI_SO_GIO = 6;            // mỗi giải lấy mốc đầu (trận mới) tối đa 6 giờ 1 lần
 const CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI = 24;  // chỉ theo dõi trận đá trong 24 giờ tới
-const GIU_LAI_SO_LUOT_DU_PHONG = 0;                // dùng hết lượt thì thôi
 const BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM = 20;  // giá trung bình giảm từ 20% trở lên mới báo
 const BAO_TELEGRAM_KHI_SO_NHA_CAI_CUNG_GIAM_TU = 3; // phải có ít nhất 3 nhà cái cùng giảm
 const GUI_BAN_TIN_TOP5_MOI_SO_GIO = 3;              // bản tin Top 5 gửi Telegram mỗi 3 giờ
@@ -111,43 +111,48 @@ async function chay() {
     try {
       const { duLieu, conLai } = await goiApi(`/sports/${g.ma}/events`);
       if (conLai !== null) trangThai.conLai = conLai;
-      const gioDaSapNhat = Math.min(...duLieu.map(e => Date.parse(e.commence_time)).filter(t => t > bayGio), Infinity);
-      if (gioDaSapNhat - bayGio < CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI * 3600e3) giaiCanLay.push({ ...g, gioDaSapNhat });
+      const dsTran = duLieu.filter(e => { const t = Date.parse(e.commence_time); return t > bayGio && t - bayGio < CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI * 3600e3; });
+      if (dsTran.length) giaiCanLay.push({ ...g, dsTran });
     } catch (e) { console.log(`${g.ten}: ${e.message}`); }
   }
 
-  // 2. Số lượt được dùng = toàn bộ lượt còn lại
-  const homNay = new Date(bayGio);
-  const dauThangSau = Date.UTC(homNay.getUTCFullYear(), homNay.getUTCMonth() + 1, 1);
-  const soGioConLai = Math.max(1, (dauThangSau - bayGio) / 3600e3);
-  const luotDungDuoc = Math.max(0, (trangThai.conLai ?? 0) - GIU_LAI_SO_LUOT_DU_PHONG);
-  trangThai.quyLuot = luotDungDuoc; // lấy hết tất cả giải mỗi lần chạy, còn lượt là lấy
-
-  // Ưu tiên: giải lâu chưa lấy, và giải có trận sắp đá (sát giờ là lúc kèo bất thường hay chạy)
-  const diemUuTien = g => {
-    const soGioChuaLay = (bayGio - (trangThai.lanLayCuoi[g.ma] || 0)) / 3600e3;
-    const sapDa = g.gioDaSapNhat - bayGio < UU_TIEN_TRAN_SAP_DA_TRONG_SO_GIO * 3600e3;
-    return Math.min(soGioChuaLay, 1000) * (sapDa ? 3 : 1);
-  };
-  giaiCanLay.sort((a, b) => diemUuTien(b) - diemUuTien(a));
-
-  // 3. Lấy kèo
+  // 2. Chọn giải cần lấy kèo: có trận đang ở mốc 60 / 15 phút, hoặc có trận mới chưa có mốc đầu
+  trangThai.daLayMoc ||= {};
+  trangThai.lanLayDau ||= {};
+  const tranOMoc = []; // các trận vừa được lấy kèo ở mốc 60 / 15 phút
+  let coThayDoi = false;
   for (const g of giaiCanLay) {
-    if (trangThai.quyLuot < 1) break;
+    if ((trangThai.conLai ?? 0) < 1) { console.log('Hết lượt lấy kèo'); break; }
+    const canMoc = [];
+    for (const e of g.dsTran) {
+      const conPhut = (Date.parse(e.commence_time) - bayGio) / 60e3;
+      for (const m of LAY_KEO_TRUOC_GIO_DA_SO_PHUT) {
+        const khoa = `${e.id}|${m}`;
+        if (conPhut > Math.max(1, m - 12) && conPhut <= m + 12 && !trangThai.daLayMoc[khoa]) canMoc.push({ id: e.id, moc: m, khoa });
+      }
+    }
+    const coTranMoi = g.dsTran.some(e => !lichSu.tran[e.id]) &&
+      bayGio - (trangThai.lanLayDau[g.ma] || 0) > LAY_MOC_DAU_TOI_DA_MOI_SO_GIO * 3600e3;
+    if (!canMoc.length && !coTranMoi) continue;
+
+    // 3. Lấy kèo giải này (1 lượt)
     try {
       const { duLieu, conLai } = await goiApi(`/sports/${g.ma}/odds?regions=eu&markets=h2h&oddsFormat=decimal`);
-      trangThai.quyLuot -= 1;
+      coThayDoi = true;
       if (conLai !== null) trangThai.conLai = conLai;
       trangThai.lanLayCuoi[g.ma] = bayGio;
+      if (coTranMoi) trangThai.lanLayDau[g.ma] = bayGio;
+      for (const c of canMoc) trangThai.daLayMoc[c.khoa] = bayGio;
       for (const ev of duLieu) {
         const batDau = Date.parse(ev.commence_time);
-        if (batDau <= bayGio) continue; // trận đã đá thì thôi
+        if (batDau <= bayGio || batDau - bayGio > CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI * 3600e3) continue;
         const giaNhaCai = {};
         for (const bk of ev.bookmakers || []) { const gia = layGia3Cua(ev, bk); if (gia) giaNhaCai[bk.key] = gia; }
         const ds = Object.values(giaNhaCai);
         if (!ds.length) continue;
         const tb = [0, 1, 2].map(i => +(ds.reduce((s, x) => s + x[i], 0) / ds.length).toFixed(3));
-        const moc = { luc: bayGio, tb, pin: giaNhaCai.pinnacle || null, soNhaCai: ds.length };
+        const mocCuaTran = canMoc.find(c => c.id === ev.id);
+        const moc = { luc: bayGio, tb, pin: giaNhaCai.pinnacle || null, soNhaCai: ds.length, truocGioDa: mocCuaTran ? mocCuaTran.moc : null };
         let t = lichSu.tran[ev.id];
         if (!t) {
           t = lichSu.tran[ev.id] = { id: ev.id, ma: g.ma, giai: g.ten, nha: ev.home_team, khach: ev.away_team, gioDa: batDau, ncDau: giaNhaCai, moc: [] };
@@ -158,9 +163,26 @@ async function chay() {
         t.ma = g.ma;
         t.ncMoi = giaNhaCai;
         t.moc.push(moc);
-        if (t.moc.length > 80) t.moc.splice(1, t.moc.length - 80); // giữ mốc đầu + các mốc gần nhất
+        if (t.moc.length > 80) t.moc.splice(1, t.moc.length - 80);
+        if (mocCuaTran) tranOMoc.push({ t, moc: mocCuaTran.moc });
       }
     } catch (e) { console.log(`${g.ten}: ${e.message}`); }
+  }
+
+  // Báo Telegram tại mốc 60 / 15 phút nếu kèo bất thường
+  for (const { t, moc } of tranOMoc) {
+    if (t.moc.length < 2) continue;
+    const p = phanTichTran(t);
+    if (!p || !p.duTieuChuanTop || p.soGiam < BAO_TELEGRAM_KHI_SO_NHA_CAI_CUNG_GIAM_TU || p.giam < BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM) continue;
+    const khoa = `${t.id}|${p.cua}|${moc}`;
+    if (trangThai.daBao[khoa]) continue;
+    trangThai.daBao[khoa] = bayGio;
+    await guiTelegram(
+      `⚠️ <b>KÈO BẤT THƯỜNG – còn ${moc} phút</b>\n${t.giai} – đá lúc ${gioVN(t.gioDa)}\n<b>${t.nha} – ${t.khach}</b>\n\n` +
+      `💰 Được đổ tiền: <b>${p.doiDuocDoTien}</b>  ${p.giaDau.toFixed(2)} → ${p.giaMoi.toFixed(2)} (giảm ${p.giam.toFixed(1)}%)\n` +
+      `❌ Bị bỏ: <b>${p.doiBiBo}</b>  ${p.giaBoDau.toFixed(2)} → ${p.giaBoMoi.toFixed(2)} (tăng ${p.tangBo.toFixed(1)}%)\n\n` +
+      `${p.soGiam}/${p.soSoSanh} nhà cái cùng giảm\n${moTaPinnacle(p)}\n${moTaHinhDang(p)}` +
+      (p.doiCuaDuoi ? '\n🚩 Đội cửa dưới được đổ tiền' : ''));
   }
 
   // 4. Lấy tỷ số trận đã đá xong, đối chiếu với cửa được đổ tiền
@@ -199,6 +221,7 @@ async function chay() {
           tk.tong++; if (kq.dungHuong) tk.dung++;
         }
         delete lichSu.tran[ev.id];
+        coThayDoi = true;
       }
     } catch (e) { console.log(`Lấy tỷ số ${ma}: ${e.message}`); }
   }
@@ -206,6 +229,7 @@ async function chay() {
   // Quá lâu không có tỷ số thì bỏ
   for (const id in lichSu.tran) if (lichSu.tran[id].gioDa < bayGio - BO_TRAN_KHONG_CO_KET_QUA_SAU_SO_GIO * 3600e3) delete lichSu.tran[id];
   for (const k in trangThai.daBao) if (!lichSu.tran[k.split('|')[0]]) delete trangThai.daBao[k];
+  for (const k in trangThai.daLayMoc) if (bayGio - trangThai.daLayMoc[k] > 24 * 3600e3) delete trangThai.daLayMoc[k];
 
   // Gửi Telegram kết quả đối chiếu (chỉ trận có kèo chạy)
   const canBao = vuaXong.filter(k => k.duTieuChuan && k.giam >= CHI_DOI_CHIEU_TRAN_KEO_GIAM_TU_PHAN_TRAM).sort((a, b) => b.giam - a.giam);
@@ -221,36 +245,20 @@ async function chay() {
     await guiTelegram(nd);
   }
 
-  // 5. Báo Telegram trận kèo chạy mạnh (mỗi trận mỗi cửa chỉ báo 1 lần)
-  for (const t of Object.values(lichSu.tran)) {
-    if (t.gioDa <= bayGio) continue; // trận đã đá thì không báo kèo nữa
-    const p = phanTichTran(t);
-    if (!p || !p.duTieuChuanTop) continue;
-    const khoa = `${t.id}|${p.cua}`;
-    if (p.giam >= BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM && p.soGiam >= BAO_TELEGRAM_KHI_SO_NHA_CAI_CUNG_GIAM_TU && !trangThai.daBao[khoa]) {
-      trangThai.daBao[khoa] = bayGio;
-      const gio = gioVN(t.gioDa);
-      await guiTelegram(
-        `⚠️ <b>KÈO BẤT THƯỜNG</b>\n${t.giai} – đá lúc ${gio}\n<b>${t.nha} – ${t.khach}</b>\n\n` +
-        `💰 Được đổ tiền: <b>${p.doiDuocDoTien}</b>  ${p.giaDau.toFixed(2)} → ${p.giaMoi.toFixed(2)} (giảm ${p.giam.toFixed(1)}%)\n` +
-        `❌ Bị bỏ: <b>${p.doiBiBo}</b>  ${p.giaBoDau.toFixed(2)} → ${p.giaBoMoi.toFixed(2)} (tăng ${p.tangBo.toFixed(1)}%)\n\n` +
-        `${p.soGiam}/${p.soSoSanh} nhà cái cùng giảm\n${moTaPinnacle(p)}\n${moTaHinhDang(p)}` +
-        (p.doiCuaDuoi ? '\n🚩 Đội cửa dưới được đổ tiền' : '') +
-        (p.satGioDa ? '\n🚩 Kèo chạy sát giờ đá' : ''));
-    }
-  }
-
   // 6. Bản tin Top 5 mỗi 3 giờ (cho phép sớm 15 phút vì lịch chạy của GitHub hay bị trễ)
   if (bayGio - (trangThai.lanGuiBanTin || 0) >= GUI_BAN_TIN_TOP5_MOI_SO_GIO * 3600e3 - 15 * 60e3) {
-    if (await guiBanTinTop5(lichSu, trangThai, bayGio)) trangThai.lanGuiBanTin = bayGio;
+    if (await guiBanTinTop5(lichSu, trangThai, bayGio)) { trangThai.lanGuiBanTin = bayGio; coThayDoi = true; }
   }
 
-  lichSu.capNhat = bayGio;
-  trangThai.capNhat = bayGio;
-  ghiFile(FILE_LICH_SU, lichSu);
-  ghiFile(FILE_TRANG_THAI, trangThai);
-  ghiFile(FILE_KET_QUA, ketQua);
-  console.log(`Xong. Giải có trận: ${giaiCanLay.map(g => g.ten).join(', ') || 'không có'}. Lượt còn lại: ${trangThai.conLai}`);
+  // Chỉ lưu khi có thay đổi, tránh tạo bản lưu thừa mỗi 10 phút
+  if (coThayDoi) {
+    lichSu.capNhat = bayGio;
+    trangThai.capNhat = bayGio;
+    ghiFile(FILE_LICH_SU, lichSu);
+    ghiFile(FILE_TRANG_THAI, trangThai);
+    ghiFile(FILE_KET_QUA, ketQua);
+  }
+  console.log(`Xong. Giải có trận trong 24 giờ: ${giaiCanLay.map(g => g.ten).join(', ') || 'không có'}. Lượt còn lại: ${trangThai.conLai}`);
 }
 
 await chay();
