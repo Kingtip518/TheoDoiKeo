@@ -3,9 +3,10 @@
 //  Nguồn dữ liệu: The Odds API (the-odds-api.com)
 //  Việc làm mỗi lần chạy:
 //   1. Xem giải nào có trận sắp đá (bước này KHÔNG tốn lượt)
-//   2. Tự chia số lượt còn lại trong tháng cho đều, rồi lấy kèo các giải đó
+//   2. Lấy kèo tất cả các giải đó, dùng hết lượt thì thôi
 //   3. Lưu lại kèo từng lần lấy  ->  data/lich-su.json
 //   4. Nếu có trận kèo giảm mạnh  ->  báo Telegram (nếu đã cài)
+//   5. Mỗi 3 giờ gửi bản tin Top 5 về Telegram
 // =====================================================================
 
 import fs from 'node:fs';
@@ -18,6 +19,8 @@ const CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI = 24;  // chỉ theo dõi trận đ�
 const GIU_LAI_SO_LUOT_DU_PHONG = 0;                // dùng hết lượt thì thôi
 const BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM = 10;  // giá trung bình giảm từ 10% trở lên mới báo
 const BAO_TELEGRAM_KHI_SO_NHA_CAI_CUNG_GIAM_TU = 3; // phải có ít nhất 3 nhà cái cùng giảm
+const GUI_BAN_TIN_TOP5_MOI_SO_GIO = 3;              // bản tin Top 5 gửi Telegram mỗi 3 giờ
+const DIA_CHI_WEB = 'https://kingtip518.github.io/TheoDoiKeo/';
 // ------------------------------------------------------------------
 
 const MA_API = process.env.ODDS_API_KEY;
@@ -54,13 +57,40 @@ function layGia3Cua(tran, nhaCai) {
 }
 
 async function guiTelegram(noiDung) {
-  if (!TELEGRAM_MA_BOT || !TELEGRAM_MA_NHOM) return;
+  if (!TELEGRAM_MA_BOT || !TELEGRAM_MA_NHOM) { console.log('Chưa cài mã Telegram nên không gửi'); return false; }
   try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_MA_BOT}/sendMessage`, {
+    const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_MA_BOT}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TELEGRAM_MA_NHOM, text: noiDung, parse_mode: 'HTML' }),
+      body: JSON.stringify({ chat_id: TELEGRAM_MA_NHOM, text: noiDung, parse_mode: 'HTML', disable_web_page_preview: true }),
     });
-  } catch (e) { console.log('Gửi Telegram lỗi:', e.message); }
+    if (!r.ok) { console.log('Gửi Telegram lỗi:', await r.text()); return false; }
+    return true;
+  } catch (e) { console.log('Gửi Telegram lỗi:', e.message); return false; }
+}
+
+const gioVN = ms => new Date(ms).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+
+// Bản tin Top 5 định kỳ – có trận chạy mạnh hay không cũng gửi
+async function guiBanTinTop5(lichSu, trangThai, bayGio) {
+  const dsTran = Object.values(lichSu.tran).filter(t => t.gioDa > bayGio);
+  const soGiai = new Set(dsTran.map(t => t.giai)).size;
+  const top5 = dsTran.map(t => ({ t, p: phanTichTran(t) }))
+    .filter(x => x.p && x.p.duTieuChuanTop)
+    .sort((a, b) => b.p.giam - a.p.giam).slice(0, 5);
+  let noiDung = `📊 <b>BẢN TIN KÈO – ${gioVN(bayGio)}</b>\n` +
+    `Đang theo dõi ${dsTran.length} trận / ${soGiai} giải · còn ${trangThai.conLai ?? '?'} lượt\n\n`;
+  if (!top5.length) {
+    noiDung += 'Chưa có trận nào kèo chạy mạnh.\n';
+  } else {
+    noiDung += '<b>Top 5 kèo giảm mạnh nhất:</b>\n';
+    top5.forEach(({ t, p }, i) => {
+      noiDung += `\n${i + 1}. <b>${t.nha} – ${t.khach}</b>\n   ${t.giai} · đá ${gioVN(t.gioDa)}\n` +
+        `   💰 ${p.doiDuocDoTien}: ${p.giaDau.toFixed(2)} → ${p.giaMoi.toFixed(2)} (−${p.giam.toFixed(1)}%)\n` +
+        `   ${p.soSoSanh ? `${p.soGiam}/${p.soSoSanh} nhà cái cùng giảm · ` : ''}${p.hinhDang === 'tu-tu' ? 'giảm từ từ' : p.hinhDang === 'dot-ngot' ? 'nhảy đột ngột' : 'mới 2 lần lấy'}\n`;
+    });
+  }
+  noiDung += `\n🌐 ${DIA_CHI_WEB}`;
+  return guiTelegram(noiDung);
 }
 
 async function chay() {
@@ -81,12 +111,12 @@ async function chay() {
     } catch (e) { console.log(`${g.ten}: ${e.message}`); }
   }
 
-  // 2. Chia đều lượt: mỗi giờ được dùng = lượt còn lại / số giờ còn lại trong tháng
+  // 2. Số lượt được dùng = toàn bộ lượt còn lại
   const homNay = new Date(bayGio);
   const dauThangSau = Date.UTC(homNay.getUTCFullYear(), homNay.getUTCMonth() + 1, 1);
   const soGioConLai = Math.max(1, (dauThangSau - bayGio) / 3600e3);
   const luotDungDuoc = Math.max(0, (trangThai.conLai ?? 0) - GIU_LAI_SO_LUOT_DU_PHONG);
-   trangThai.quyLuot = luotDungDuoc; // lấy hết tất cả giải mỗi lần chạy, còn lượt là lấy
+  trangThai.quyLuot = luotDungDuoc; // lấy hết tất cả giải mỗi lần chạy, còn lượt là lấy
 
   // Ưu tiên: giải lâu chưa lấy, và giải có trận sắp đá (sát giờ là lúc kèo bất thường hay chạy)
   const diemUuTien = g => {
@@ -138,7 +168,7 @@ async function chay() {
     const khoa = `${t.id}|${p.cua}`;
     if (p.giam >= BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM && p.soGiam >= BAO_TELEGRAM_KHI_SO_NHA_CAI_CUNG_GIAM_TU && !trangThai.daBao[khoa]) {
       trangThai.daBao[khoa] = bayGio;
-      const gio = new Date(t.gioDa).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+      const gio = gioVN(t.gioDa);
       await guiTelegram(
         `⚠️ <b>KÈO CHẠY MẠNH</b>\n${t.giai} – đá lúc ${gio}\n<b>${t.nha} – ${t.khach}</b>\n\n` +
         `💰 Được đổ tiền: <b>${p.doiDuocDoTien}</b>  ${p.giaDau.toFixed(2)} → ${p.giaMoi.toFixed(2)} (giảm ${p.giam.toFixed(1)}%)\n` +
@@ -147,6 +177,11 @@ async function chay() {
         (p.doiCuaDuoi ? '\n🚩 Đội cửa dưới được đổ tiền' : '') +
         (p.satGioDa ? '\n🚩 Kèo chạy sát giờ đá' : ''));
     }
+  }
+
+  // 6. Bản tin Top 5 mỗi 3 giờ (cho phép sớm 15 phút vì lịch chạy của GitHub hay bị trễ)
+  if (bayGio - (trangThai.lanGuiBanTin || 0) >= GUI_BAN_TIN_TOP5_MOI_SO_GIO * 3600e3 - 15 * 60e3) {
+    if (await guiBanTinTop5(lichSu, trangThai, bayGio)) trangThai.lanGuiBanTin = bayGio;
   }
 
   lichSu.capNhat = bayGio;
