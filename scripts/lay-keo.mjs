@@ -14,8 +14,8 @@ import { phanTichTran, moTaHinhDang, moTaPinnacle } from '../phan-tich.js';
 // ---------------- CÀI ĐẶT (sửa số ở đây nếu muốn) ----------------
 // Tự lấy danh sách TẤT CẢ giải bóng đá đang diễn ra từ nguồn dữ liệu (không tốn lượt)
 const UU_TIEN_TRAN_SAP_DA_TRONG_SO_GIO = 6;          // trận sắp đá trong 6 giờ tới được lấy kèo dày hơn
-const CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI = 48;  // trận đá xa hơn thì chưa theo dõi
-const GIU_LAI_SO_LUOT_DU_PHONG = 10;               // không bao giờ dùng hết sạch lượt
+const CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI = 24;  // chỉ theo dõi trận đá trong 24 giờ tới
+const GIU_LAI_SO_LUOT_DU_PHONG = 0;                // dùng hết lượt thì thôi
 const BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM = 10;  // giá trung bình giảm từ 10% trở lên mới báo
 const BAO_TELEGRAM_KHI_SO_NHA_CAI_CUNG_GIAM_TU = 3; // phải có ít nhất 3 nhà cái cùng giảm
 // ------------------------------------------------------------------
@@ -86,7 +86,7 @@ async function chay() {
   const dauThangSau = Date.UTC(homNay.getUTCFullYear(), homNay.getUTCMonth() + 1, 1);
   const soGioConLai = Math.max(1, (dauThangSau - bayGio) / 3600e3);
   const luotDungDuoc = Math.max(0, (trangThai.conLai ?? 0) - GIU_LAI_SO_LUOT_DU_PHONG);
-  trangThai.quyLuot = Math.min(trangThai.quyLuot + luotDungDuoc / soGioConLai, Math.max(1, giaiCanLay.length), luotDungDuoc);
+   trangThai.quyLuot = luotDungDuoc; // lấy hết tất cả giải mỗi lần chạy, còn lượt là lấy
 
   // Ưu tiên: giải lâu chưa lấy, và giải có trận sắp đá (sát giờ là lúc kèo bất thường hay chạy)
   const diemUuTien = g => {
