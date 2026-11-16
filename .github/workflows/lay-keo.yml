@@ -2,7 +2,7 @@ name: Lay keo moi gio
 
 on:
   schedule:
-    - cron: '7 * * * *'   # chạy mỗi giờ, vào phút thứ 7
+    - cron: '*/10 * * * *'   # 10 phút kiểm tra 1 lần (chỉ tốn lượt khi trận tới mốc 60 / 15 phút)
   workflow_dispatch:       # cho phép bấm chạy tay
 
 permissions:
