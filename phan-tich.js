@@ -6,7 +6,8 @@ export const TEN_CUA = ['Đội nhà thắng', 'Hòa', 'Đội khách thắng'];
 
 // ---------------- CÀI ĐẶT (sửa số ở đây nếu muốn) ----------------
 export const CAI_DAT = {
-  NHA_CAI_COI_LA_GIAM_KHI_GIAM_TU_PHAN_TRAM: 3,   // 1 nhà cái giảm từ 3% mới tính là "cùng giảm"
+  KEO_BAT_THUONG_KHI_GIAM_TU_PHAN_TRAM: 20,       // giá giảm từ 20% trở lên mới coi là bất thường (vào Top 5, báo Telegram, thống kê)
+  NHA_CAI_COI_LA_GIAM_KHI_GIAM_TU_PHAN_TRAM: 10,  // 1 nhà cái giảm từ 10% mới tính là "cùng giảm"
   VAO_TOP5_KHI_TI_LE_NHA_CAI_CUNG_GIAM_TU: 0.6,   // ít nhất 60% số nhà cái cùng giảm mới vào Top 5
   COI_LA_NHAY_DOT_NGOT_KHI_1_LAN_CHIEM_TU: 0.7,   // 1 lần lấy chiếm từ 70% tổng mức giảm = nhảy đột ngột
   DOI_CUA_DUOI_KHI_GIA_DAU_TU: 2.6,               // đội có giá từ 2.6 trở lên coi là đội cửa dưới
@@ -72,7 +73,7 @@ export function phanTichTran(t, tuLuc) {
     doiCuaDuoi: cua !== 1 && dau.tb[cua] >= CAI_DAT.DOI_CUA_DUOI_KHI_GIA_DAU_TU,
     satGioDa: t.gioDa - moi.luc < CAI_DAT.SAT_GIO_DA_KHI_CON_DUOI_SO_GIO * 3600e3,
     nghiDaoDoi,
-    duTieuChuanTop: !nghiDaoDoi && duNhaCaiCungGiam && -pt[cua] > 0,
+    duTieuChuanTop: !nghiDaoDoi && duNhaCaiCungGiam && -pt[cua] >= CAI_DAT.KEO_BAT_THUONG_KHI_GIAM_TU_PHAN_TRAM,
     tuLuc: dau.luc,
   };
 }

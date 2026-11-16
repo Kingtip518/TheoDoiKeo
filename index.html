@@ -53,7 +53,7 @@
   <select class="chon-giai" id="chonGiai"><option value="">Tất cả giải</option></select>
 
   <h2>🔥 Top 5 kèo giảm mạnh nhất từ lúc bắt đầu theo dõi</h2>
-  <p class="giaithich">So giá trung bình các nhà cái hiện tại với lần đầu lấy được. Cửa giảm giá = cửa được đổ tiền. Chỉ tính trận có từ 60% nhà cái cùng giảm, đã loại trận nghi dữ liệu đảo đội.</p>
+  <p class="giaithich">So giá trung bình các nhà cái hiện tại với lần đầu lấy được. Cửa giảm giá = cửa được đổ tiền. Chỉ tính trận giảm từ 20% trở lên, có từ 60% nhà cái cùng giảm, đã loại trận nghi dữ liệu đảo đội.</p>
   <div id="top5"></div>
 
   <h2>⚡ Top 5 kèo chạy nhanh trong 3 giờ gần nhất</h2>
@@ -61,7 +61,7 @@
   <div id="top5Nhanh"></div>
 
   <h2>🏁 Kết quả đối chiếu</h2>
-  <p class="giaithich">Hết trận so tỷ số với cửa được đổ tiền. Thống kê chỉ tính trận đủ tiêu chuẩn (từ 60% nhà cái cùng giảm).</p>
+  <p class="giaithich">Hết trận so tỷ số với cửa được đổ tiền. Chỉ tính trận kèo giảm từ 20% trở lên và có từ 60% nhà cái cùng giảm.</p>
   <div id="thongKe"></div>
   <div id="ketQua"></div>
 
@@ -91,11 +91,11 @@ function veThe(t, p) {
   if (p) {
     if (p.nghiDaoDoi) nhan.push('⚠️ Nghi dữ liệu đảo đội nhà – khách (không tính)');
     else {
-    if (p.hinhDang === 'tu-tu' && p.giam >= 5) nhan.push('🚩 Giảm từ từ – tiền vào đều');
-    if (p.doiCuaDuoi && p.giam >= 5) nhan.push('🚩 Đội cửa dưới được đổ tiền');
-    if (p.satGioDa && p.giam >= 5) nhan.push('🚩 Kèo chạy sát giờ đá');
-    if (p.soSoSanh >= 3 && p.soGiam / p.soSoSanh >= 0.8 && p.giam >= 8) nhan.push('🚩 Gần như mọi nhà cái cùng giảm');
-    if (p.pinGiam !== null && p.pinGiam >= 3 && p.giam >= 5) nhan.push('🚩 Pinnacle cũng giảm');
+    if (p.hinhDang === 'tu-tu' && p.giam >= 20) nhan.push('🚩 Giảm từ từ – tiền vào đều');
+    if (p.doiCuaDuoi && p.giam >= 20) nhan.push('🚩 Đội cửa dưới được đổ tiền');
+    if (p.satGioDa && p.giam >= 20) nhan.push('🚩 Kèo chạy sát giờ đá');
+    if (p.soSoSanh >= 3 && p.soGiam / p.soSoSanh >= 0.8 && p.giam >= 20) nhan.push('🚩 Gần như mọi nhà cái cùng giảm');
+    if (p.pinGiam !== null && p.pinGiam >= 3 && p.giam >= 20) nhan.push('🚩 Pinnacle cũng giảm');
     }
   }
   const chiTiet = p && p.giam > 0
@@ -120,22 +120,22 @@ function hienThi() {
   const ds = Object.values(duLieu.tran).filter(t => (!giai || t.giai === giai) && t.gioDa > Date.now());
 
   const top5 = ds.map(t => ({ t, p: phanTichTran(t) })).filter(x => x.p && x.p.duTieuChuanTop).sort((a, b) => b.p.giam - a.p.giam).slice(0, 5);
-  document.getElementById('top5').innerHTML = top5.length ? top5.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có trận nào đủ điều kiện.</div>';
+  document.getElementById('top5').innerHTML = top5.length ? top5.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có trận nào kèo giảm từ 20% trở lên.</div>';
 
   const tu3h = Date.now() - 3.5*3600e3;
   const nhanh = ds.map(t => ({ t, p: phanTichTran(t, tu3h) })).filter(x => x.p && x.p.duTieuChuanTop).sort((a, b) => b.p.giam - a.p.giam).slice(0, 5);
-  document.getElementById('top5Nhanh').innerHTML = nhanh.length ? nhanh.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có biến động trong 3 giờ qua.</div>';
+  document.getElementById('top5Nhanh').innerHTML = nhanh.length ? nhanh.map(x => veThe(x.t, x.p)).join('') : '<div class="trong">Chưa có trận nào giảm từ 20% trong 3 giờ qua.</div>';
 
   // Kết quả đối chiếu
   const tk = (ketQua && ketQua.thongKe) || {};
   const o = (ten, x) => `<div>${ten}<b>${x && x.tong ? Math.round(x.dung / x.tong * 100) + '%' : '—'}</b>${x && x.tong ? `đúng ${x.dung}/${x.tong}` : 'chưa có'}</div>`;
-  document.getElementById('thongKe').innerHTML = `<div class="tk">${o('Giảm từ 20%', tk.tu20)}${o('Giảm 10–20%', tk.tu10)}${o('Giảm 3–10%', tk.tu3)}</div>`;
-  const dsKq = ((ketQua && ketQua.tran) || []).filter(k => (!giai || k.giai === giai) && k.duTieuChuan && k.giam >= 3).slice(0, 30);
+  document.getElementById('thongKe').innerHTML = `<div class="tk">${o('Giảm từ 40%', tk.tu40)}${o('Giảm 30–40%', tk.tu30)}${o('Giảm 20–30%', tk.tu20)}</div>`;
+  const dsKq = ((ketQua && ketQua.tran) || []).filter(k => (!giai || k.giai === giai) && k.duTieuChuan && k.giam >= 20).slice(0, 30);
   document.getElementById('ketQua').innerHTML = dsKq.length ? dsKq.map(k => `<div class="kq">
       <div class="dong1"><span>${k.giai}</span><span>${gioVN(k.gioDa)}</span></div>
       <div class="tyso">${k.nha} ${k.tySo} ${k.khach}</div>
       💰 Tiền đổ vào: <b>${k.doiDuocDoTien}</b> (−${k.giam}%) → <span class="${k.dungHuong ? 'dung' : 'sai'}">${k.dungHuong ? '✅ Đúng hướng' : '❌ Sai hướng'}</span>
-    </div>`).join('') : '<div class="trong">Chưa có trận kèo chạy nào kết thúc.</div>';
+    </div>`).join('') : '<div class="trong">Chưa có trận kèo bất thường nào kết thúc.</div>';
 
   const tatCa = ds.sort((a, b) => a.gioDa - b.gioDa);
   document.getElementById('tatCa').innerHTML = tatCa.length ? tatCa.map(t => veThe(t, phanTichTran(t))).join('') : '<div class="trong">Hiện chưa có trận nào trong 48 giờ tới.</div>';

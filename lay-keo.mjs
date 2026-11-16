@@ -18,13 +18,13 @@ import { phanTichTran, moTaHinhDang, moTaPinnacle } from '../phan-tich.js';
 const UU_TIEN_TRAN_SAP_DA_TRONG_SO_GIO = 6;          // trận sắp đá trong 6 giờ tới được lấy kèo dày hơn
 const CHI_THEO_DOI_TRAN_DA_TRONG_SO_GIO_TOI = 24;  // chỉ theo dõi trận đá trong 24 giờ tới
 const GIU_LAI_SO_LUOT_DU_PHONG = 0;                // dùng hết lượt thì thôi
-const BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM = 10;  // giá trung bình giảm từ 10% trở lên mới báo
+const BAO_TELEGRAM_KHI_KEO_GIAM_TU_PHAN_TRAM = 20;  // giá trung bình giảm từ 20% trở lên mới báo
 const BAO_TELEGRAM_KHI_SO_NHA_CAI_CUNG_GIAM_TU = 3; // phải có ít nhất 3 nhà cái cùng giảm
 const GUI_BAN_TIN_TOP5_MOI_SO_GIO = 3;              // bản tin Top 5 gửi Telegram mỗi 3 giờ
 const DIA_CHI_WEB = 'https://kingtip518.github.io/TheoDoiKeo/';
 const LAY_KET_QUA_SAU_GIO_BONG_LAN_SO_GIO = 2;      // 2 giờ sau giờ bóng lăn mới đi lấy tỷ số
 const BO_TRAN_KHONG_CO_KET_QUA_SAU_SO_GIO = 12;     // quá 12 giờ vẫn không có tỷ số thì bỏ
-const CHI_DOI_CHIEU_TRAN_KEO_GIAM_TU_PHAN_TRAM = 3; // trận kèo giảm dưới 3% coi như không chạy, không gửi tin
+const CHI_DOI_CHIEU_TRAN_KEO_GIAM_TU_PHAN_TRAM = 20; // chỉ đối chiếu trận kèo giảm từ 20% (bất thường)
 // ------------------------------------------------------------------
 
 const MA_API = process.env.ODDS_API_KEY;
@@ -85,9 +85,9 @@ async function guiBanTinTop5(lichSu, trangThai, bayGio) {
   let noiDung = `📊 <b>BẢN TIN KÈO – ${gioVN(bayGio)}</b>\n` +
     `Đang theo dõi ${dsTran.length} trận / ${soGiai} giải · còn ${trangThai.conLai ?? '?'} lượt\n\n`;
   if (!top5.length) {
-    noiDung += 'Chưa có trận nào kèo chạy mạnh.\n';
+    noiDung += 'Chưa có trận nào kèo giảm từ 20% trở lên.\n';
   } else {
-    noiDung += '<b>Top 5 kèo giảm mạnh nhất:</b>\n';
+    noiDung += '<b>Top 5 kèo bất thường (giảm từ 20%):</b>\n';
     top5.forEach(({ t, p }, i) => {
       noiDung += `\n${i + 1}. <b>${t.nha} – ${t.khach}</b>\n   ${t.giai} · đá ${gioVN(t.gioDa)}\n` +
         `   💰 ${p.doiDuocDoTien}: ${p.giaDau.toFixed(2)} → ${p.giaMoi.toFixed(2)} (−${p.giam.toFixed(1)}%)\n` +
@@ -194,7 +194,7 @@ async function chay() {
         vuaXong.push(kq);
         // Cộng dồn thống kê theo mức kèo chạy (chỉ trận đủ tiêu chuẩn)
         if (kq.duTieuChuan && kq.giam >= CHI_DOI_CHIEU_TRAN_KEO_GIAM_TU_PHAN_TRAM) {
-          const nhom = kq.giam >= 20 ? 'tu20' : kq.giam >= 10 ? 'tu10' : 'tu3';
+          const nhom = kq.giam >= 40 ? 'tu40' : kq.giam >= 30 ? 'tu30' : 'tu20';
           const tk = ketQua.thongKe[nhom] ||= { tong: 0, dung: 0 };
           tk.tong++; if (kq.dungHuong) tk.dung++;
         }
@@ -217,7 +217,7 @@ async function chay() {
     }
     const tk = ketQua.thongKe;
     const dong = (ten, x) => x && x.tong ? `${ten}: đúng ${x.dung}/${x.tong} trận (${Math.round(x.dung / x.tong * 100)}%)\n` : '';
-    nd += `\n📈 <b>Thống kê cộng dồn</b>\n` + dong('Kèo giảm từ 20%', tk.tu20) + dong('Kèo giảm 10–20%', tk.tu10) + dong('Kèo giảm 3–10%', tk.tu3);
+    nd += `\n📈 <b>Thống kê cộng dồn</b>\n` + dong('Kèo giảm từ 40%', tk.tu40) + dong('Kèo giảm 30–40%', tk.tu30) + dong('Kèo giảm 20–30%', tk.tu20);
     await guiTelegram(nd);
   }
 
@@ -231,7 +231,7 @@ async function chay() {
       trangThai.daBao[khoa] = bayGio;
       const gio = gioVN(t.gioDa);
       await guiTelegram(
-        `⚠️ <b>KÈO CHẠY MẠNH</b>\n${t.giai} – đá lúc ${gio}\n<b>${t.nha} – ${t.khach}</b>\n\n` +
+        `⚠️ <b>KÈO BẤT THƯỜNG</b>\n${t.giai} – đá lúc ${gio}\n<b>${t.nha} – ${t.khach}</b>\n\n` +
         `💰 Được đổ tiền: <b>${p.doiDuocDoTien}</b>  ${p.giaDau.toFixed(2)} → ${p.giaMoi.toFixed(2)} (giảm ${p.giam.toFixed(1)}%)\n` +
         `❌ Bị bỏ: <b>${p.doiBiBo}</b>  ${p.giaBoDau.toFixed(2)} → ${p.giaBoMoi.toFixed(2)} (tăng ${p.tangBo.toFixed(1)}%)\n\n` +
         `${p.soGiam}/${p.soSoSanh} nhà cái cùng giảm\n${moTaPinnacle(p)}\n${moTaHinhDang(p)}` +
